@@ -17,9 +17,7 @@
 void BOARD_InitHardware(void)
 {
     BOARD_InitPins();
-    BOARD_BootClockFRO12M();
-    BOARD_InitDebugConsole();
-    BOARD_InitBootPeripherals();
+    BOARD_BootClockFRO96M();
 
     LED_RED_INIT(LOGIC_LED_OFF);
 }

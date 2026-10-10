@@ -105,10 +105,9 @@ instance:
 /* clang-format on */
 
 static void SysTick_init(void) {
-  /* Initialize the systick module. */
-  SysTick->LOAD = (uint32_t)(SYSTICK_TICKS - 1UL);
+  SysTick->LOAD = 0UL;
   SysTick->VAL = 0UL;
-  SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_TICKINT_Msk | SysTick_CTRL_ENABLE_Msk;
+  SysTick->CTRL = 0U;
 }
 
 /***********************************************************************************************************************

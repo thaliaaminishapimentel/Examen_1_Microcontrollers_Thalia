@@ -26,8 +26,6 @@
             <processor_version>26.06.20</processor_version>
             <pin_labels>
                <pin_label pin_num="63" pin_signal="P3_12/LPUART2_RTS_B/LPUART3_TXD/CT1_MAT2/PWM0_X0/FLEXIO0_D20/PWM1_A2" label="LED_RED" identifier="LED_RED"/>
-               <pin_label pin_num="78" pin_signal="P0_2/TDO/SWO/LPUART0_RXD/LPSPI0_SCK/CT0_MAT0/UTICK_CAP0/FLEXIO0_D2" label="RX" identifier="RX"/>
-               <pin_label pin_num="79" pin_signal="P0_3/TDI/LPUART0_TXD/LPSPI0_SDO/CT0_MAT1/UTICK_CAP1/FLEXIO0_D3/CMP0_OUT" label="TX" identifier="TX"/>
             </pin_labels>
          </pins_profile>
          <functions_list>
@@ -39,11 +37,6 @@
                   <enableClock>true</enableClock>
                </options>
                <dependencies>
-                  <dependency resourceType="Peripheral" resourceId="LPUART0" description="Peripheral LPUART0 signals are routed in the Pins Tool, but the peripheral is not initialized in the Peripherals Tool." problem_level="1" source="Pins:BOARD_InitPins">
-                     <feature name="initialized" evaluation="equal">
-                        <data>true</data>
-                     </feature>
-                  </dependency>
                   <dependency resourceType="SWComponent" resourceId="platform.drivers.common" description="Pins initialization requires the COMMON Driver in the project." problem_level="2" source="Pins:BOARD_InitPins">
                      <feature name="enabled" evaluation="equal" configuration="cm33_core0">
                         <data>true</data>
@@ -74,13 +67,6 @@
                         <pin_feature name="invert_input" value="normal"/>
                      </pin_features>
                   </pin>
-                  <pin peripheral="LPUART0" signal="RX" pin_num="78" pin_signal="P0_2/TDO/SWO/LPUART0_RXD/LPSPI0_SCK/CT0_MAT0/UTICK_CAP0/FLEXIO0_D2">
-                     <pin_features>
-                        <pin_feature name="pull_select" value="up"/>
-                        <pin_feature name="pull_enable" value="enable"/>
-                     </pin_features>
-                  </pin>
-                  <pin peripheral="LPUART0" signal="TX" pin_num="79" pin_signal="P0_3/TDI/LPUART0_TXD/LPSPI0_SDO/CT0_MAT1/UTICK_CAP1/FLEXIO0_D3/CMP0_OUT"/>
                </pins>
             </function>
          </functions_list>

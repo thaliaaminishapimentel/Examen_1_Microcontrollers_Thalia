@@ -62,4 +62,17 @@ button_event_t Button_ProcessTick(void);
 uint32_t Button_GetShortPressCount(void);
 uint32_t Button_GetLongPressCount(void);
 
+void Timer_TickInit(void);
+uint32_t Timer_GetMs(void);
+void Timer_InjectMs(uint32_t msVal);
+
+status_t Pwm_Init(uint32_t freqHz, uint32_t dutyPercent);
+status_t Pwm_SetFrequency(uint32_t freqHz);
+status_t Pwm_SetDuty(uint32_t dutyPercent);
+uint32_t Pwm_GetFrequency(void);
+uint32_t Pwm_GetDuty(void);
+
+void Uart_InitConsole(void);
+void Uart_SendString(const char *str);
+
 #endif /* _APP_CHALLENGE_H_ */
