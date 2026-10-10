@@ -58,4 +58,8 @@ void GPIO_InitApp(void);
 void StatusLed_Set(bool on);
 void StatusLed_Toggle(void);
 
+button_event_t Button_ProcessTick(void);
+uint32_t Button_GetShortPressCount(void);
+uint32_t Button_GetLongPressCount(void);
+
 #endif /* _APP_CHALLENGE_H_ */

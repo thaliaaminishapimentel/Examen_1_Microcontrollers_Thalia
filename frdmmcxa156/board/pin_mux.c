@@ -14,6 +14,8 @@ mcu_data: ksdk2_0
 processor_version: 26.06.20
 pin_labels:
 - {pin_num: '63', pin_signal: P3_12/LPUART2_RTS_B/LPUART3_TXD/CT1_MAT2/PWM0_X0/FLEXIO0_D20/PWM1_A2, label: LED_RED, identifier: LED_RED}
+- {pin_num: '78', pin_signal: P0_2/TDO/SWO/LPUART0_RXD/LPSPI0_SCK/CT0_MAT0/UTICK_CAP0/FLEXIO0_D2, label: RX, identifier: RX}
+- {pin_num: '79', pin_signal: P0_3/TDI/LPUART0_TXD/LPSPI0_SDO/CT0_MAT1/UTICK_CAP1/FLEXIO0_D3/CMP0_OUT, label: TX, identifier: TX}
  * BE CAREFUL MODIFYING THIS COMMENT - IT IS YAML SETTINGS FOR TOOLS ***********
  */
 /* clang-format on */
@@ -42,6 +44,8 @@ BOARD_InitPins:
 - pin_list:
   - {pin_num: '63', peripheral: GPIO3, signal: 'GPIO, 12', pin_signal: P3_12/LPUART2_RTS_B/LPUART3_TXD/CT1_MAT2/PWM0_X0/FLEXIO0_D20/PWM1_A2, direction: OUTPUT, gpio_init_state: 'true',
     slew_rate: fast, open_drain: disable, drive_strength: low, pull_select: up, pull_enable: enable, input_buffer: enable, invert_input: normal}
+  - {pin_num: '78', peripheral: LPUART0, signal: RX, pin_signal: P0_2/TDO/SWO/LPUART0_RXD/LPSPI0_SCK/CT0_MAT0/UTICK_CAP0/FLEXIO0_D2, pull_select: up, pull_enable: enable}
+  - {pin_num: '79', peripheral: LPUART0, signal: TX, pin_signal: P0_3/TDI/LPUART0_TXD/LPSPI0_SDO/CT0_MAT1/UTICK_CAP1/FLEXIO0_D3/CMP0_OUT}
  * BE CAREFUL MODIFYING THIS COMMENT - IT IS YAML SETTINGS FOR TOOLS ***********
  */
 /* clang-format on */
@@ -54,14 +58,46 @@ BOARD_InitPins:
  * END ****************************************************************************************************************/
 void BOARD_InitPins(void)
 {
+    /* PORT0: Peripheral clock is enabled */
+    CLOCK_EnableClock(kCLOCK_GatePORT0);
     /* PORT3: Peripheral clock is enabled */
     CLOCK_EnableClock(kCLOCK_GatePORT3);
     /* GPIO3: Peripheral clock is enabled */
     CLOCK_EnableClock(kCLOCK_GateGPIO3);
+    /* LPUART0 peripheral is released from reset */
+    RESET_ReleasePeripheralReset(kLPUART0_RST_SHIFT_RSTn);
+    /* PORT0 peripheral is released from reset */
+    RESET_ReleasePeripheralReset(kPORT0_RST_SHIFT_RSTn);
     /* GPIO3 peripheral is released from reset */
     RESET_ReleasePeripheralReset(kGPIO3_RST_SHIFT_RSTn);
     /* PORT3 peripheral is released from reset */
     RESET_ReleasePeripheralReset(kPORT3_RST_SHIFT_RSTn);
+
+    /* PORT0_2 (pin 78) is configured as LPUART0_RXD */
+    PORT_SetPinMux(BOARD_INITPINS_RX_PORT, BOARD_INITPINS_RX_PIN, kPORT_MuxAlt2);
+
+    PORT0->PCR[2] = ((PORT0->PCR[2] &
+                      /* Mask bits to zero which are setting */
+                      (~(PORT_PCR_PS_MASK | PORT_PCR_PE_MASK | PORT_PCR_IBE_MASK)))
+
+                     /* Pull Select: Enables internal pullup resistor. */
+                     | PORT_PCR_PS(PCR_PS_ps1)
+
+                     /* Pull Enable: Enables. */
+                     | PORT_PCR_PE(PCR_PE_pe1)
+
+                     /* Input Buffer Enable: Enables. */
+                     | PORT_PCR_IBE(PCR_IBE_ibe1));
+
+    /* PORT0_3 (pin 79) is configured as LPUART0_TXD */
+    PORT_SetPinMux(BOARD_INITPINS_TX_PORT, BOARD_INITPINS_TX_PIN, kPORT_MuxAlt2);
+
+    PORT0->PCR[3] = ((PORT0->PCR[3] &
+                      /* Mask bits to zero which are setting */
+                      (~(PORT_PCR_IBE_MASK)))
+
+                     /* Input Buffer Enable: Enables. */
+                     | PORT_PCR_IBE(PCR_IBE_ibe1));
 
     const port_pin_config_t LED_RED = {/* Internal pull-up resistor is enabled */
                                        .pullSelect = kPORT_PullUp,
