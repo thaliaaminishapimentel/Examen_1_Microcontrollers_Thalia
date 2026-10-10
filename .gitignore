@@ -1,0 +1,26 @@
+# Compilacion y ejecutables generados
+build/
+debug/
+release/
+output/
+bin/
+*.exe
+*.o
+*.obj
+*.elf
+*.bin
+*.hex
+*.axf
+*.map
+*.d
+*.bak
+
+# SDK y repositorios locales pesados
+mcuxsdk/
+__repo__/
+
+# Configuraciones del sistema y entorno
+.DS_Store
+Thumbs.db
+.env
+.vscode/*.log
