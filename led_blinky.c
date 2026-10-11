@@ -4,7 +4,7 @@
  * Matrícula: 20250531
  * Placa: FRDM-MCXA156
  *
- * Hito 5: Sincronización de flags, concurrencia y optimización de secciones críticas.
+ * Hito 6: Pruebas unitarias, evidencias de ejecución y documentación final.
  */
 
 #include "app_challenge.h"
@@ -579,9 +579,19 @@ void Uart_SendString(const char *str)
     {
         uint8_t ch = (uint8_t)(*str++);
 
-        /* Espera en caso de llenado transitorio; las interrupciones permanecen activas */
+        /* Espera en caso de llenado transitorio con escape por hardware para evitar congelamiento */
+        uint32_t timeout = 50000U;
         while (((s_txHead + 1U) % UART_TX_RING_BUFFER_SIZE) == s_txTail)
         {
+            if (--timeout == 0U)
+            {
+                if (LPUART0->STAT & LPUART_STAT_TDRE_MASK)
+                {
+                    LPUART0->DATA = s_txRingBuffer[s_txTail];
+                    s_txTail = (s_txTail + 1U) % UART_TX_RING_BUFFER_SIZE;
+                }
+                timeout = 50000U;
+            }
         }
 
         /* Sección crítica mínima para encolar el byte e iniciar transmisión */
@@ -1110,23 +1120,34 @@ void Fsm_Process(button_event_t btnEvent)
  ******************************************************************************/
 int main(void)
 {
-    /* 1. Inicialización de la placa y reloj de alta frecuencia FRO96M */
-    BOARD_InitHardware();
-    BOARD_BootClockFRO96M();
+    /* 1. Neutralizar SysTick inmediatamente por si hardware_init / peripherals lo activó */
+    SysTick->CTRL = 0U;
+    SysTick->LOAD = 0U;
+    SysTick->VAL  = 0U;
 
-    /* 2. Inicializar consola UART primero para telemetría y diagnóstico inmediato */
+    /* 2. Inicialización de la placa y reloj de alta frecuencia FRO96M */
+    BOARD_InitHardware();
+
+    /* Asegurar que SysTick permanezca apagado tras BOARD_InitHardware */
+    SysTick->CTRL = 0U;
+    SysTick->LOAD = 0U;
+    SysTick->VAL  = 0U;
+
+    BOARD_BootClockFRO96M();
+    __enable_irq();
+
+    /* 3. Inicializar consola UART primero para telemetría y diagnóstico inmediato */
     Uart_InitConsole();
 
     /* Banner de bienvenida */
     Uart_SendString("\r\n========================================\r\n"
                     "FRDM-MCXA156: Controlador de Iluminacion\r\n"
                     "Estudiante: Thalia Pimentel (20250531)\r\n"
-                    "Hito 5: Concurrencia y Secciones Criticas\r\n"
                     "Modo inicial: MANUAL | 1000 Hz | 25%\r\n"
                     "Escriba HELP para ver la lista de comandos\r\n"
                     "========================================\r\n");
 
-    /* 3. Inicialización de periféricos propios del proyecto */
+    /* 4. Inicialización de periféricos propios del proyecto */
     GPIO_InitApp();
     Timer_TickInit();
     Pwm_Init(PWM_DEFAULT_FREQ_HZ, PWM_DEFAULT_DUTY_PERCENT);

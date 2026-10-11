@@ -74,4 +74,6 @@ cmake --build debug
 - **Hito 3:** Base de tiempo CTIMER0 (1 ms) y modulación PWM por hardware con CTIMER1 (500 Hz / 1 kHz / 2 kHz, ciclo 0%-100%). (Completado)
 - **Hito 4:** Máquina de estados FSM, rampa triangular y parser de comandos UART. (Completado)
 - **Hito 5:** Sincronización de flags, concurrencia y optimización de secciones críticas. (Completado)
-- **Hito 6:** Pruebas unitarias, evidencias de ejecución y documentación final. *(Próximo avance)*
+- **Hito 6:** Pruebas unitarias, evidencias de ejecución y documentación final. (Completado)
+
+Link del video de pruebas: https://youtu.be/ZPO4SgTaOCY
