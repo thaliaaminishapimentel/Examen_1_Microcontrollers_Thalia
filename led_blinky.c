@@ -3,6 +3,8 @@
  * Estudiante: Thalía Aminisha Pimentel
  * Matrícula: 20250531
  * Placa: FRDM-MCXA156
+ *
+ * Hito 5: Sincronización de flags, concurrencia y optimización de secciones críticas.
  */
 
 #include "app_challenge.h"
@@ -43,9 +45,9 @@ static bool     s_lastRawPinPressed       = false;
 static bool     s_buttonValidatedPressed  = false;
 static bool     s_longPressReported       = false;
 
-/* Contadores separados de pulsaciones aceptadas */
-static uint32_t s_shortPressCount = 0U;
-static uint32_t s_longPressCount  = 0U;
+/* Contadores separados de pulsaciones aceptadas por el sistema */
+static uint32_t s_shortPressAcceptedCount = 0U;
+static uint32_t s_longPressAcceptedCount  = 0U;
 
 void APP_BTN_IRQHandler(void)
 {
@@ -76,6 +78,7 @@ void GPIO1_IRQHandler(void)
     SDK_ISR_EXIT_BARRIER;
 }
 
+/* Consumo atómico de la bandera de flanco */
 static uint32_t TakeButtonEdge(void)
 {
     uint32_t irqState = DisableGlobalIRQ();
@@ -231,7 +234,6 @@ button_event_t Button_ProcessTick(void)
                             (s_pressDurationMs >= BTN_SHORT_PRESS_MIN_MS) &&
                             (s_pressDurationMs < BTN_LONG_PRESS_MS))
                         {
-                            s_shortPressCount++;
                             event = BTN_EVENT_SHORT;
                         }
                         s_pressDurationMs = 0U;
@@ -251,7 +253,6 @@ button_event_t Button_ProcessTick(void)
         if ((s_pressDurationMs >= BTN_LONG_PRESS_MS) && !s_longPressReported)
         {
             s_longPressReported = true;
-            s_longPressCount++;
             event = BTN_EVENT_LONG;
         }
     }
@@ -261,12 +262,12 @@ button_event_t Button_ProcessTick(void)
 
 uint32_t Button_GetShortPressCount(void)
 {
-    return s_shortPressCount;
+    return s_shortPressAcceptedCount;
 }
 
 uint32_t Button_GetLongPressCount(void)
 {
-    return s_longPressCount;
+    return s_longPressAcceptedCount;
 }
 
 /*******************************************************************************
@@ -322,6 +323,7 @@ void Timer_TickInit(void)
 
 uint32_t Timer_GetMs(void)
 {
+    __DSB();
     return g_systemMs;
 }
 
@@ -329,6 +331,7 @@ void Timer_InjectMs(uint32_t msVal)
 {
     uint32_t irq = DisableGlobalIRQ();
     g_systemMs = msVal;
+    __DSB();
     EnableGlobalIRQ(irq);
 }
 
@@ -470,14 +473,15 @@ uint32_t Pwm_GetDuty(void)
 /*******************************************************************************
  * Driver LPUART0 con Búfer Circular y Parser de Comandos
  * - Búfer circular de recepción: 128 bytes.
- * - Búfer circular de transmisión no bloqueante: 256 bytes.
+ * - Búfer circular de transmisión no bloqueante: 512 bytes.
  * - Soporta CR, LF y CRLF produciendo una única ejecución.
  * - Manejo riguroso de desbordamiento (> 63 caracteres) y resincronización.
+ * - Desacoplamiento de contadores de error para evitar carreras de RMW.
  ******************************************************************************/
 static volatile uint8_t  s_rxRingBuffer[UART_RING_BUFFER_SIZE];
 static volatile uint16_t s_rxHead = 0U;
 static volatile uint16_t s_rxTail = 0U;
-static volatile uint32_t s_rxOverflowErrors = 0U;
+static volatile uint32_t s_rxRingOverflowCount = 0U; /* Incrementado únicamente en ISR */
 
 static volatile uint8_t  s_txRingBuffer[UART_TX_RING_BUFFER_SIZE];
 static volatile uint16_t s_txHead = 0U;
@@ -487,6 +491,7 @@ static char     s_lineBuffer[UART_MAX_LINE_LENGTH + 1U];
 static uint16_t s_lineIndex = 0U;
 static bool     s_lineOverflowDiscard = false;
 static bool     s_lastCharWasCr = false;
+static uint32_t s_cmdLineOverflowCount = 0U; /* Incrementado únicamente en contexto main */
 
 void LPUART0_IRQHandler(void)
 {
@@ -504,7 +509,7 @@ void LPUART0_IRQHandler(void)
         }
         else
         {
-            s_rxOverflowErrors++;
+            s_rxRingOverflowCount++;
         }
     }
 
@@ -523,7 +528,7 @@ void LPUART0_IRQHandler(void)
         }
     }
 
-    /* 3. Limpieza de flags de error si ocurren */
+    /* 3. Limpieza de flags de error de línea si ocurren */
     if (status & (LPUART_STAT_OR_MASK | LPUART_STAT_NF_MASK | LPUART_STAT_FE_MASK | LPUART_STAT_PF_MASK))
     {
         LPUART0->STAT |= (LPUART_STAT_OR_MASK | LPUART_STAT_NF_MASK | LPUART_STAT_FE_MASK | LPUART_STAT_PF_MASK);
@@ -574,10 +579,12 @@ void Uart_SendString(const char *str)
     {
         uint8_t ch = (uint8_t)(*str++);
 
+        /* Espera en caso de llenado transitorio; las interrupciones permanecen activas */
         while (((s_txHead + 1U) % UART_TX_RING_BUFFER_SIZE) == s_txTail)
         {
         }
 
+        /* Sección crítica mínima para encolar el byte e iniciar transmisión */
         uint32_t irq = DisableGlobalIRQ();
         s_txRingBuffer[s_txHead] = ch;
         s_txHead = (s_txHead + 1U) % UART_TX_RING_BUFFER_SIZE;
@@ -588,12 +595,15 @@ void Uart_SendString(const char *str)
 
 static bool Uart_GetRxByte(uint8_t *byte)
 {
+    uint32_t irq = DisableGlobalIRQ();
     if (s_rxHead == s_rxTail)
     {
+        EnableGlobalIRQ(irq);
         return false;
     }
     *byte = s_rxRingBuffer[s_rxTail];
     s_rxTail = (s_rxTail + 1U) % UART_RING_BUFFER_SIZE;
+    EnableGlobalIRQ(irq);
     return true;
 }
 
@@ -649,13 +659,15 @@ static void Uart_ExecuteCommand(char *cmdLine)
                         "  DUTY <0-100>\r\n"
                         "  FREQ <500|1000|2000>\r\n"
                         "  PAUSE | RESUME\r\n"
-                        "  STREAM ON | STREAM OFF\r\n");
+                        "  STREAM ON | STREAM OFF\r\n"
+                        "  TEST OVERFLOW\r\n");
     }
     else if (strcmp(p, "STATUS") == 0)
     {
         char resp[160];
         const char *stateStr = (g_appCurrentState == STATE_MANUAL) ? "MANUAL" :
                                (g_appCurrentState == STATE_AUTO)   ? "AUTO" : "PAUSA";
+        uint32_t totalErrors = s_rxRingOverflowCount + s_cmdLineOverflowCount;
         snprintf(resp, sizeof(resp),
                  "STATUS: Modo=%s, Freq=%luHz, Duty=%lu%%, SavedDuty=%lu%%, Uptime=%lus, BtnShort=%lu, BtnLong=%lu, RxErr=%lu\r\n",
                  stateStr,
@@ -665,7 +677,7 @@ static void Uart_ExecuteCommand(char *cmdLine)
                  (unsigned long)(Timer_GetMs() / 1000U),
                  (unsigned long)Button_GetShortPressCount(),
                  (unsigned long)Button_GetLongPressCount(),
-                 (unsigned long)s_rxOverflowErrors);
+                 (unsigned long)totalErrors);
         Uart_SendString(resp);
     }
     else if (strncmp(p, "MODE", 4) == 0)
@@ -828,8 +840,13 @@ static void Uart_ExecuteCommand(char *cmdLine)
 void Uart_ProcessConsole(void)
 {
     uint8_t ch = 0;
-    while (Uart_GetRxByte(&ch))
+    uint32_t processedBytes = 0U;
+
+    /* Procesamiento acotado por iteración para garantizar tiempo de CPU a tareas de 1 ms */
+    while (processedBytes < 32U && Uart_GetRxByte(&ch))
     {
+        processedBytes++;
+
         if (ch == '\r')
         {
             s_lastCharWasCr = true;
@@ -844,7 +861,7 @@ void Uart_ProcessConsole(void)
                 s_lineOverflowDiscard = false;
             }
             s_lineIndex = 0U;
-            continue;
+            break; /* Ceder control al superloop tras ejecutar orden */
         }
 
         if (ch == '\n')
@@ -867,7 +884,7 @@ void Uart_ProcessConsole(void)
                 s_lineOverflowDiscard = false;
             }
             s_lineIndex = 0U;
-            continue;
+            break; /* Ceder control al superloop tras ejecutar orden */
         }
 
         s_lastCharWasCr = false;
@@ -882,7 +899,7 @@ void Uart_ProcessConsole(void)
             {
                 /* Desbordamiento de línea (> 63 caracteres) */
                 s_lineOverflowDiscard = true;
-                s_rxOverflowErrors++;
+                s_cmdLineOverflowCount++;
             }
         }
     }
@@ -978,17 +995,19 @@ void Fsm_Process(button_event_t btnEvent)
 {
     uint32_t now = Timer_GetMs();
 
-    /* 1. Transiciones provocadas por el pulsador */
+    /* 1. Transiciones provocadas por el pulsador con conteo de eventos aceptados */
     switch (g_appCurrentState)
     {
         case STATE_MANUAL:
             if (btnEvent == BTN_EVENT_SHORT)
             {
+                s_shortPressAcceptedCount++;
                 Fsm_SetModeAuto();
                 Uart_SendString("[BOTON] Pulsacion CORTA: Conmutando a modo AUTO (Rampa 10%-90%)\r\n");
             }
             else if (btnEvent == BTN_EVENT_LONG)
             {
+                s_longPressAcceptedCount++;
                 Fsm_Pause();
                 Uart_SendString("[BOTON] Pulsacion LARGA: Entrando en modo PAUSA (PWM 0%)\r\n");
             }
@@ -997,6 +1016,7 @@ void Fsm_Process(button_event_t btnEvent)
         case STATE_AUTO:
             if (btnEvent == BTN_EVENT_SHORT)
             {
+                s_shortPressAcceptedCount++;
                 Fsm_SetModeManual();
                 char buf[96];
                 snprintf(buf, sizeof(buf), "[BOTON] Pulsacion CORTA: Conmutando a modo MANUAL | Duty=%lu%%\r\n", (unsigned long)g_manualSavedDuty);
@@ -1004,6 +1024,7 @@ void Fsm_Process(button_event_t btnEvent)
             }
             else if (btnEvent == BTN_EVENT_LONG)
             {
+                s_longPressAcceptedCount++;
                 Fsm_Pause();
                 Uart_SendString("[BOTON] Pulsacion LARGA: Entrando en modo PAUSA (PWM 0%)\r\n");
             }
@@ -1012,10 +1033,12 @@ void Fsm_Process(button_event_t btnEvent)
         case STATE_PAUSA:
             if (btnEvent == BTN_EVENT_SHORT)
             {
+                /* Pulsación corta en PAUSA se ignora estrictamente: no cuenta como aceptada */
                 Uart_SendString("[BOTON] Pulsacion CORTA ignorada en modo PAUSA\r\n");
             }
             else if (btnEvent == BTN_EVENT_LONG)
             {
+                s_longPressAcceptedCount++;
                 Fsm_Resume();
                 const char *prevName = (g_appCurrentState == STATE_AUTO) ? "AUTO" : "MANUAL";
                 char buf[96];
@@ -1098,6 +1121,7 @@ int main(void)
     Uart_SendString("\r\n========================================\r\n"
                     "FRDM-MCXA156: Controlador de Iluminacion\r\n"
                     "Estudiante: Thalia Pimentel (20250531)\r\n"
+                    "Hito 5: Concurrencia y Secciones Criticas\r\n"
                     "Modo inicial: MANUAL | 1000 Hz | 25%\r\n"
                     "Escriba HELP para ver la lista de comandos\r\n"
                     "========================================\r\n");
@@ -1116,16 +1140,16 @@ int main(void)
     {
         uint32_t now = Timer_GetMs();
 
-        /* Tarea 1: Procesar recepción de consola UART */
-        Uart_ProcessConsole();
-
-        /* Tarea 2: Procesamiento periódico de botón y FSM cada 1 ms */
+        /* Tarea 1: Servicio prioritario del tick de 1 ms (Antirrebote y FSM) */
         if ((uint32_t)(now - lastTickService) >= 1U)
         {
             lastTickService = now;
             button_event_t btnEvent = Button_ProcessTick();
             Fsm_Process(btnEvent);
         }
+
+        /* Tarea 2: Procesar recepción de consola UART (acotado por iteración) */
+        Uart_ProcessConsole();
 
         /* Tarea 3: Telemetría cada 1000 ms si STREAM ON está activo */
         if (g_streamEnabled && ((uint32_t)(now - lastStreamMs) >= 1000U))

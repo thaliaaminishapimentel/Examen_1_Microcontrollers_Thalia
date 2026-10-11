@@ -80,7 +80,7 @@ typedef enum {
  * Búferes UART y Límites de Consola
  ******************************************************************************/
 #define UART_RING_BUFFER_SIZE      128U
-#define UART_TX_RING_BUFFER_SIZE   256U
+#define UART_TX_RING_BUFFER_SIZE   512U
 #define UART_MAX_LINE_LENGTH       63U
 
 /*******************************************************************************
@@ -94,7 +94,7 @@ void StatusLed_Toggle(void);
 /* Procesamiento periódico de botón (debe llamarse cada 1 ms en el tick) */
 button_event_t Button_ProcessTick(void);
 
-/* Contadores de pulsaciones */
+/* Contadores de pulsaciones aceptadas */
 uint32_t Button_GetShortPressCount(void);
 uint32_t Button_GetLongPressCount(void);
 
